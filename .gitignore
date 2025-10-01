@@ -32,3 +32,6 @@ scan.sh
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# svg files
+tsp_route.svg

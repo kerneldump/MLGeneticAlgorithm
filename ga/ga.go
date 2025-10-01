@@ -1,6 +1,7 @@
 package ga
 
 import (
+	"fmt"
 	"math/rand"
 	"sort"
 )
@@ -47,6 +48,38 @@ func New(options ...func(*GA)) *GA {
 	return ga
 }
 
+// Validate checks if the GA configuration is valid.
+func (ga *GA) Validate() error {
+	if ga.Population == nil || len(ga.Population) == 0 {
+		return fmt.Errorf("population cannot be nil or empty")
+	}
+
+	if ga.Generations < 1 {
+		return fmt.Errorf("generations must be at least 1, got %d", ga.Generations)
+	}
+
+	if ga.MutationRate < 0 || ga.MutationRate > 1 {
+		return fmt.Errorf("mutation rate must be between 0 and 1, got %f", ga.MutationRate)
+	}
+
+	if ga.CrossoverRate < 0 || ga.CrossoverRate > 1 {
+		return fmt.Errorf("crossover rate must be between 0 and 1, got %f", ga.CrossoverRate)
+	}
+
+	if ga.selector == nil {
+		return fmt.Errorf("selector cannot be nil")
+	}
+
+	// Validate population contains no nil chromosomes
+	for i, chromosome := range ga.Population {
+		if chromosome == nil {
+			return fmt.Errorf("population contains nil chromosome at index %d", i)
+		}
+	}
+
+	return nil
+}
+
 // WithPopulation sets the initial population.
 func WithPopulation(population []Chromosome) func(*GA) {
 	return func(ga *GA) {
@@ -90,9 +123,10 @@ func WithSelector(selector Selector) func(*GA) {
 }
 
 // Run runs the genetic algorithm.
-func (ga *GA) Run() {
-	if len(ga.Population) == 0 {
-		return
+func (ga *GA) Run() error {
+	// Validate configuration before running
+	if err := ga.Validate(); err != nil {
+		return fmt.Errorf("invalid GA configuration: %w", err)
 	}
 
 	for i := 0; i < ga.Generations; i++ {
@@ -141,6 +175,8 @@ func (ga *GA) Run() {
 
 		ga.Population = nextGeneration
 	}
+
+	return nil
 }
 
 // Best returns the best chromosome found.

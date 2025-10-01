@@ -84,7 +84,9 @@ func runOneMax() {
 	)
 
 	// Run the genetic algorithm.
-	geneticAlgorithm.Run()
+	if err := geneticAlgorithm.Run(); err != nil {
+		log.Fatalf("Failed to run genetic algorithm: %v", err)
+	}
 
 	// Print the best chromosome.
 	best := geneticAlgorithm.Best()
@@ -126,7 +128,9 @@ func runTSP() {
 	)
 
 	// Run the genetic algorithm.
-	geneticAlgorithm.Run()
+	if err := geneticAlgorithm.Run(); err != nil {
+    	log.Fatalf("Failed to run genetic algorithm: %v", err)
+	}
 
 	// Get the best route.
 	best := geneticAlgorithm.Best().(*ga.TSPChromosome)
