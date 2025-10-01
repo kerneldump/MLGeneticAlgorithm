@@ -20,13 +20,14 @@ type Selector interface {
 
 // GA is the main struct for the genetic algorithm.
 type GA struct {
-	Population     []Chromosome
-	Generations    int
-	MutationRate   float64
-	CrossoverRate  float64
-	Elitism        bool
-	selector       Selector
-	BestChromosome Chromosome
+	Population       []Chromosome
+	Generations      int
+	MutationRate     float64
+	CrossoverRate    float64
+	Elitism          bool
+	selector         Selector
+	BestChromosome   Chromosome
+	progressCallback func(generation int, best Chromosome)
 }
 
 // New creates a new genetic algorithm.
@@ -122,6 +123,13 @@ func WithSelector(selector Selector) func(*GA) {
 	}
 }
 
+// WithProgressCallback sets a callback function to monitor progress.
+func WithProgressCallback(callback func(generation int, best Chromosome)) func(*GA) {
+	return func(ga *GA) {
+		ga.progressCallback = callback
+	}
+}
+
 // Run runs the genetic algorithm.
 func (ga *GA) Run() error {
 	// Validate configuration before running
@@ -138,6 +146,11 @@ func (ga *GA) Run() error {
 		// Update the best chromosome.
 		if ga.BestChromosome == nil || ga.Population[0].Fitness() > ga.BestChromosome.Fitness() {
 			ga.BestChromosome = ga.Population[0]
+		}
+
+		// Call progress callback if provided
+		if ga.progressCallback != nil {
+			ga.progressCallback(i, ga.BestChromosome)
 		}
 
 		// Create the next generation.

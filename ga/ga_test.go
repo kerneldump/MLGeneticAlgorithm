@@ -174,8 +174,47 @@ func TestRunWithInvalidConfiguration(t *testing.T) {
 		WithPopulation([]Chromosome{}),
 	)
 
-	err := ga.Run()  // Now Run() returns error
+	err := ga.Run()
 	if err == nil {
 		t.Error("Expected error when running with invalid configuration, got nil")
+	}
+}
+
+func TestProgressCallback(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	callbackCalled := false
+	var lastGeneration int
+	var lastBest Chromosome
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(5),
+		WithProgressCallback(func(generation int, best Chromosome) {
+			callbackCalled = true
+			lastGeneration = generation
+			lastBest = best
+		}),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if !callbackCalled {
+		t.Error("Progress callback was never called")
+	}
+
+	if lastGeneration != 4 {
+		t.Errorf("Expected last generation to be 4, got %d", lastGeneration)
+	}
+
+	if lastBest == nil {
+		t.Error("Expected best chromosome to be set")
 	}
 }

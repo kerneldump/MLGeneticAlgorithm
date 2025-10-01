@@ -118,6 +118,8 @@ func runTSP() {
 		population[i] = &ga.TSPChromosome{Route: route}
 	}
 
+	fmt.Println("Running genetic algorithm...")
+
 	// Create a new genetic algorithm.
 	geneticAlgorithm := ga.New(
 		ga.WithPopulation(population),
@@ -125,11 +127,17 @@ func runTSP() {
 		ga.WithCrossoverRate(0.85),
 		ga.WithGenerations(200),
 		ga.WithElitism(true),
+		ga.WithProgressCallback(func(generation int, best ga.Chromosome) {
+			// Print progress every 20 generations
+			if generation%20 == 0 || generation == 199 {
+				fmt.Printf("Generation %d: Best fitness = %.6f\n", generation, best.Fitness())
+			}
+		}),
 	)
 
 	// Run the genetic algorithm.
 	if err := geneticAlgorithm.Run(); err != nil {
-    	log.Fatalf("Failed to run genetic algorithm: %v", err)
+		log.Fatalf("Failed to run genetic algorithm: %v", err)
 	}
 
 	// Get the best route.
