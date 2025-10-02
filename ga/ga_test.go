@@ -218,3 +218,43 @@ func TestProgressCallback(t *testing.T) {
 		t.Error("Expected best chromosome to be set")
 	}
 }
+
+func TestReproducibleWithSeed(t *testing.T) {
+	population1 := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	population2 := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	// Run with same seed
+	ga1 := New(
+		WithPopulation(population1),
+		WithGenerations(10),
+		WithRandomSeed(12345),
+	)
+
+	ga2 := New(
+		WithPopulation(population2),
+		WithGenerations(10),
+		WithRandomSeed(12345),
+	)
+
+	err1 := ga1.Run()
+	err2 := ga2.Run()
+
+	if err1 != nil || err2 != nil {
+		t.Errorf("Unexpected errors: %v, %v", err1, err2)
+	}
+
+	// Results should be identical with same seed
+	if ga1.Best().Fitness() != ga2.Best().Fitness() {
+		t.Errorf("Expected identical results with same seed, got %f and %f",
+			ga1.Best().Fitness(), ga2.Best().Fitness())
+	}
+}

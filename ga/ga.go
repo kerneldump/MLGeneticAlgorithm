@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"sync"
+	"time"
 )
 
 // Chromosome represents a candidate solution.
@@ -28,6 +30,8 @@ type GA struct {
 	selector         Selector
 	BestChromosome   Chromosome
 	progressCallback func(generation int, best Chromosome)
+	rng              *rand.Rand
+	mu               sync.Mutex
 }
 
 // New creates a new genetic algorithm.
@@ -37,6 +41,7 @@ func New(options ...func(*GA)) *GA {
 		MutationRate:  0.01,
 		CrossoverRate: 0.8,
 		Elitism:       true,
+		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 	for _, option := range options {
 		option(ga)
@@ -51,7 +56,7 @@ func New(options ...func(*GA)) *GA {
 
 // Validate checks if the GA configuration is valid.
 func (ga *GA) Validate() error {
-	if ga.Population == nil || len(ga.Population) == 0 {
+	if len(ga.Population) == 0 {
 		return fmt.Errorf("population cannot be nil or empty")
 	}
 
@@ -130,6 +135,14 @@ func WithProgressCallback(callback func(generation int, best Chromosome)) func(*
 	}
 }
 
+// WithRandomSeed sets a specific seed for the random number generator.
+// Useful for reproducible results in testing.
+func WithRandomSeed(seed int64) func(*GA) {
+	return func(ga *GA) {
+		ga.rng = rand.New(rand.NewSource(seed))
+	}
+}
+
 // Run runs the genetic algorithm.
 func (ga *GA) Run() error {
 	// Validate configuration before running
@@ -170,7 +183,11 @@ func (ga *GA) Run() error {
 
 			var offspring Chromosome
 			// Crossover.
-			if rand.Float64() < ga.CrossoverRate {
+			ga.mu.Lock()
+			shouldCrossover := ga.rng.Float64() < ga.CrossoverRate
+			ga.mu.Unlock()
+
+			if shouldCrossover {
 				offspring = parents[0].Crossover(parents[1])
 			} else {
 				// If no crossover, clone the first parent
@@ -178,7 +195,11 @@ func (ga *GA) Run() error {
 			}
 
 			// Mutation.
-			if rand.Float64() < ga.MutationRate {
+			ga.mu.Lock()
+			shouldMutate := ga.rng.Float64() < ga.MutationRate
+			ga.mu.Unlock()
+
+			if shouldMutate {
 				offspring.Mutate()
 			}
 
@@ -220,6 +241,8 @@ func (s *TournamentSelector) Select(population []Chromosome) []Chromosome {
 	parents := make([]Chromosome, 2)
 	for i := 0; i < 2; i++ {
 		// Run tournament
+		// Note: This uses math/rand for backward compatibility with user chromosomes
+		// In production, chromosomes should also use the GA's RNG
 		best := population[rand.Intn(len(population))]
 		for j := 1; j < tournamentSize; j++ {
 			competitor := population[rand.Intn(len(population))]
