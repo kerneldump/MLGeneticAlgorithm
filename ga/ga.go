@@ -22,16 +22,18 @@ type Selector interface {
 
 // GA is the main struct for the genetic algorithm.
 type GA struct {
-	Population       []Chromosome
-	Generations      int
-	MutationRate     float64
-	CrossoverRate    float64
-	Elitism          bool
-	selector         Selector
-	BestChromosome   Chromosome
-	progressCallback func(generation int, best Chromosome)
-	rng              *rand.Rand
-	mu               sync.Mutex
+	Population             []Chromosome
+	Generations            int
+	MutationRate           float64
+	CrossoverRate          float64
+	Elitism                bool
+	selector               Selector
+	BestChromosome         Chromosome
+	progressCallback       func(generation int, best Chromosome)
+	rng                    *rand.Rand
+	mu                     sync.Mutex
+	convergenceGenerations int
+	convergenceThreshold   float64
 }
 
 // New creates a new genetic algorithm.
@@ -143,12 +145,25 @@ func WithRandomSeed(seed int64) func(*GA) {
 	}
 }
 
+// WithConvergence enables early stopping if fitness doesn't improve.
+// generations: number of generations without improvement before stopping
+// threshold: minimum fitness improvement to be considered progress (use 0 for any improvement)
+func WithConvergence(generations int, threshold float64) func(*GA) {
+	return func(ga *GA) {
+		ga.convergenceGenerations = generations
+		ga.convergenceThreshold = threshold
+	}
+}
+
 // Run runs the genetic algorithm.
 func (ga *GA) Run() error {
 	// Validate configuration before running
 	if err := ga.Validate(); err != nil {
 		return fmt.Errorf("invalid GA configuration: %w", err)
 	}
+
+	var lastBestFitness float64
+	var generationsWithoutImprovement int
 
 	for i := 0; i < ga.Generations; i++ {
 		// Sort the population by fitness.
@@ -157,8 +172,29 @@ func (ga *GA) Run() error {
 		})
 
 		// Update the best chromosome.
-		if ga.BestChromosome == nil || ga.Population[0].Fitness() > ga.BestChromosome.Fitness() {
+		currentBestFitness := ga.Population[0].Fitness()
+		if ga.BestChromosome == nil || currentBestFitness > ga.BestChromosome.Fitness() {
 			ga.BestChromosome = ga.Population[0]
+		}
+
+		// Check for convergence
+		if ga.convergenceGenerations > 0 {
+			improvement := currentBestFitness - lastBestFitness
+			if improvement > ga.convergenceThreshold {
+				// Significant improvement, reset counter
+				generationsWithoutImprovement = 0
+			} else {
+				// No improvement, increment counter
+				generationsWithoutImprovement++
+				if generationsWithoutImprovement >= ga.convergenceGenerations {
+					// Converged - call callback one last time and exit
+					if ga.progressCallback != nil {
+						ga.progressCallback(i, ga.BestChromosome)
+					}
+					return nil
+				}
+			}
+			lastBestFitness = currentBestFitness
 		}
 
 		// Call progress callback if provided
