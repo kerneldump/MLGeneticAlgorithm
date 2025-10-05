@@ -1,3 +1,19 @@
+// Package ga provides a flexible and extensible genetic algorithm framework.
+//
+// A genetic algorithm is an optimization technique inspired by natural selection.
+// It works by evolving a population of candidate solutions over multiple generations,
+// using operations like selection, crossover, and mutation.
+//
+// Basic usage:
+//
+//	population := []ga.Chromosome{...}
+//	algorithm := ga.New(
+//	    ga.WithPopulation(population),
+//	    ga.WithGenerations(100),
+//	    ga.WithMutationRate(0.01),
+//	)
+//	err := algorithm.Run()
+//	best := algorithm.Best()
 package ga
 
 import (
@@ -8,15 +24,26 @@ import (
 	"time"
 )
 
-// Chromosome represents a candidate solution.
+// Chromosome represents a candidate solution in the genetic algorithm.
+// Implementations must define how to evaluate fitness, combine with other
+// chromosomes (crossover), and introduce random changes (mutation).
 type Chromosome interface {
+	// Fitness returns the quality of this solution. Higher values are better.
 	Fitness() float64
+
+	// Crossover combines this chromosome with another to create a new offspring.
 	Crossover(other Chromosome) Chromosome
+
+	// Mutate introduces a random change to this chromosome.
 	Mutate()
 }
 
-// Selector is an interface for selection algorithms.
+// Selector defines how parent chromosomes are chosen for reproduction.
+// Different selection strategies (tournament, roulette, rank-based) can be
+// implemented by satisfying this interface.
 type Selector interface {
+	// Select chooses parent chromosomes from the population for breeding.
+	// Returns a slice of selected parents (typically 2).
 	Select(population []Chromosome) []Chromosome
 }
 
@@ -36,7 +63,24 @@ type GA struct {
 	convergenceThreshold   float64
 }
 
-// New creates a new genetic algorithm.
+// New creates a new genetic algorithm with default settings.
+// Use the With* option functions to customize the algorithm.
+//
+// Default settings:
+//   - 100 generations
+//   - 0.01 mutation rate
+//   - 0.8 crossover rate
+//   - Elitism enabled
+//   - Tournament selection (size 2)
+//   - Random seed from current time
+//
+// Example:
+//
+//	ga := ga.New(
+//	    ga.WithPopulation(population),
+//	    ga.WithGenerations(200),
+//	    ga.WithMutationRate(0.02),
+//	)
 func New(options ...func(*GA)) *GA {
 	ga := &GA{
 		Generations:   100,
@@ -56,7 +100,16 @@ func New(options ...func(*GA)) *GA {
 	return ga
 }
 
-// Validate checks if the GA configuration is valid.
+// Validate checks if the GA configuration is valid and returns an error
+// if any issues are found.
+//
+// Checks include:
+//   - Population is not nil or empty
+//   - Generations is at least 1
+//   - MutationRate is between 0 and 1
+//   - CrossoverRate is between 0 and 1
+//   - Selector is not nil
+//   - No nil chromosomes in population
 func (ga *GA) Validate() error {
 	if len(ga.Population) == 0 {
 		return fmt.Errorf("population cannot be nil or empty")
@@ -88,49 +141,66 @@ func (ga *GA) Validate() error {
 	return nil
 }
 
-// WithPopulation sets the initial population.
+// WithPopulation sets the initial population of chromosomes.
+// This is typically required as there is no default population.
 func WithPopulation(population []Chromosome) func(*GA) {
 	return func(ga *GA) {
 		ga.Population = population
 	}
 }
 
-// WithGenerations sets the number of generations.
+// WithGenerations sets the maximum number of generations to evolve.
+// The algorithm may stop earlier if convergence is detected.
 func WithGenerations(generations int) func(*GA) {
 	return func(ga *GA) {
 		ga.Generations = generations
 	}
 }
 
-// WithMutationRate sets the mutation rate.
+// WithMutationRate sets the probability of mutation occurring (0.0 to 1.0).
+// Higher values introduce more randomness and exploration.
+// Typical values are between 0.01 and 0.1.
 func WithMutationRate(mutationRate float64) func(*GA) {
 	return func(ga *GA) {
 		ga.MutationRate = mutationRate
 	}
 }
 
-// WithCrossoverRate sets the crossover rate.
+// WithCrossoverRate sets the probability of crossover occurring (0.0 to 1.0).
+// Higher values favor combining parent genes more often.
+// Typical values are between 0.7 and 0.95.
 func WithCrossoverRate(crossoverRate float64) func(*GA) {
 	return func(ga *GA) {
 		ga.CrossoverRate = crossoverRate
 	}
 }
 
-// WithElitism sets the elitism flag.
+// WithElitism determines whether the best chromosome is always preserved.
+// When enabled, the best solution is guaranteed to survive to the next generation.
+// This prevents losing good solutions but may slow convergence.
 func WithElitism(elitism bool) func(*GA) {
 	return func(ga *GA) {
 		ga.Elitism = elitism
 	}
 }
 
-// WithSelector sets the selection algorithm.
+// WithSelector sets a custom selection algorithm.
+// If not specified, tournament selection with size 2 is used by default.
 func WithSelector(selector Selector) func(*GA) {
 	return func(ga *GA) {
 		ga.selector = selector
 	}
 }
 
-// WithProgressCallback sets a callback function to monitor progress.
+// WithProgressCallback sets a callback function to monitor the algorithm's progress.
+// The callback is invoked after each generation with the generation number and
+// current best chromosome.
+//
+// Example:
+//
+//	ga.WithProgressCallback(func(gen int, best ga.Chromosome) {
+//	    fmt.Printf("Generation %d: fitness = %.4f\n", gen, best.Fitness())
+//	})
 func WithProgressCallback(callback func(generation int, best Chromosome)) func(*GA) {
 	return func(ga *GA) {
 		ga.progressCallback = callback
@@ -138,16 +208,29 @@ func WithProgressCallback(callback func(generation int, best Chromosome)) func(*
 }
 
 // WithRandomSeed sets a specific seed for the random number generator.
-// Useful for reproducible results in testing.
+// This is useful for reproducible results in testing and debugging.
+// If not specified, a time-based seed is used automatically.
+//
+// Example:
+//
+//	ga.WithRandomSeed(12345)  // Same seed produces same results
 func WithRandomSeed(seed int64) func(*GA) {
 	return func(ga *GA) {
 		ga.rng = rand.New(rand.NewSource(seed))
 	}
 }
 
-// WithConvergence enables early stopping if fitness doesn't improve.
-// generations: number of generations without improvement before stopping
-// threshold: minimum fitness improvement to be considered progress (use 0 for any improvement)
+// WithConvergence enables early stopping when the algorithm plateaus.
+// The algorithm stops if the best fitness doesn't improve by at least 'threshold'
+// for 'generations' consecutive generations.
+//
+// Parameters:
+//   - generations: Number of generations without improvement before stopping
+//   - threshold: Minimum fitness improvement to count as progress (use 0 for any improvement)
+//
+// Example:
+//
+//	ga.WithConvergence(20, 0.0001)  // Stop if no improvement > 0.0001 for 20 generations
 func WithConvergence(generations int, threshold float64) func(*GA) {
 	return func(ga *GA) {
 		ga.convergenceGenerations = generations
@@ -155,7 +238,20 @@ func WithConvergence(generations int, threshold float64) func(*GA) {
 	}
 }
 
-// Run runs the genetic algorithm.
+// Run executes the genetic algorithm for the configured number of generations
+// or until convergence is detected.
+//
+// The algorithm:
+//  1. Validates the configuration
+//  2. For each generation:
+//     - Sorts population by fitness
+//     - Updates best chromosome
+//     - Checks for convergence (if enabled)
+//     - Calls progress callback (if provided)
+//     - Creates next generation via selection, crossover, and mutation
+//  3. Returns nil on success, or an error if configuration is invalid
+//
+// Run is thread-safe - multiple GA instances can run concurrently.
 func (ga *GA) Run() error {
 	// Validate configuration before running
 	if err := ga.Validate(); err != nil {
@@ -249,17 +345,35 @@ func (ga *GA) Run() error {
 	return nil
 }
 
-// Best returns the best chromosome found.
+// Best returns the best chromosome found during the algorithm's execution.
+// Returns nil if Run() has not been called yet.
 func (ga *GA) Best() Chromosome {
 	return ga.BestChromosome
 }
 
-// TournamentSelector is a selection algorithm that uses tournament selection.
+// TournamentSelector implements tournament selection for parent selection.
+// It randomly selects TournamentSize individuals and chooses the fittest one.
+// This process is repeated to select multiple parents.
+//
+// Tournament selection balances selection pressure with diversity:
+//   - Larger tournament sizes increase selection pressure (favor fit individuals)
+//   - Smaller tournament sizes maintain more diversity
 type TournamentSelector struct {
+	// TournamentSize is the number of individuals competing in each tournament.
+	// Typical values are 2-5. Default is 2 if not specified or if <= 0.
 	TournamentSize int
 }
 
-// Select selects parents using tournament selection.
+// Select chooses parent chromosomes from the population using tournament selection.
+// Returns a slice of 2 parents for breeding.
+//
+// The selection process:
+//  1. Randomly select TournamentSize individuals
+//  2. Choose the one with highest fitness
+//  3. Repeat to select the second parent
+//
+// Note: Currently uses math/rand for backward compatibility with user-defined
+// chromosomes. In production, consider passing the GA's RNG for full thread safety.
 func (s *TournamentSelector) Select(population []Chromosome) []Chromosome {
 	if len(population) == 0 {
 		return []Chromosome{}
