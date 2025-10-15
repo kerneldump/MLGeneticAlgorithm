@@ -41,10 +41,15 @@ type Chromosome interface {
 // Selector defines how parent chromosomes are chosen for reproduction.
 // Different selection strategies (tournament, roulette, rank-based) can be
 // implemented by satisfying this interface.
+//
+// THREAD SAFETY NOTE: The rng parameter must be used for all random operations
+// instead of the global math/rand to ensure thread-safe concurrent execution.
 type Selector interface {
 	// Select chooses parent chromosomes from the population for breeding.
+	// The rng parameter provides a thread-safe random number generator that
+	// must be used for all random operations within the selector.
 	// Returns a slice of selected parents (typically 2).
-	Select(population []Chromosome) []Chromosome
+	Select(population []Chromosome, rng *rand.Rand) []Chromosome
 }
 
 // GA is the main struct for the genetic algorithm.
@@ -186,6 +191,9 @@ func WithElitism(elitism bool) func(*GA) {
 
 // WithSelector sets a custom selection algorithm.
 // If not specified, tournament selection with size 2 is used by default.
+//
+// IMPORTANT: Custom selectors must use the provided rng parameter for all
+// random operations to ensure thread safety.
 func WithSelector(selector Selector) func(*GA) {
 	return func(ga *GA) {
 		ga.selector = selector
@@ -251,7 +259,9 @@ func WithConvergence(generations int, threshold float64) func(*GA) {
 //     - Creates next generation via selection, crossover, and mutation
 //  3. Returns nil on success, or an error if configuration is invalid
 //
-// Run is thread-safe - multiple GA instances can run concurrently.
+// THREAD SAFETY: Each GA instance has its own RNG and can run concurrently
+// with other GA instances. However, do not call Run() on the same GA instance
+// from multiple goroutines simultaneously.
 func (ga *GA) Run() error {
 	// Validate configuration before running
 	if err := ga.Validate(); err != nil {
@@ -310,14 +320,16 @@ func (ga *GA) Run() error {
 
 		// Fill the rest of the population
 		for nextIndex < len(ga.Population) {
-			// Select parents.
-			parents := ga.selector.Select(ga.Population)
+			// THREAD SAFETY FIX: Lock for entire selection and reproduction
+			// Pass ga.rng to selector instead of relying on global rand
+			ga.mu.Lock()
+
+			// Select parents using thread-safe RNG
+			parents := ga.selector.Select(ga.Population, ga.rng)
 
 			var offspring Chromosome
 			// Crossover.
-			ga.mu.Lock()
 			shouldCrossover := ga.rng.Float64() < ga.CrossoverRate
-			ga.mu.Unlock()
 
 			if shouldCrossover {
 				offspring = parents[0].Crossover(parents[1])
@@ -327,8 +339,8 @@ func (ga *GA) Run() error {
 			}
 
 			// Mutation.
-			ga.mu.Lock()
 			shouldMutate := ga.rng.Float64() < ga.MutationRate
+
 			ga.mu.Unlock()
 
 			if shouldMutate {
@@ -372,9 +384,9 @@ type TournamentSelector struct {
 //  2. Choose the one with highest fitness
 //  3. Repeat to select the second parent
 //
-// Note: Currently uses math/rand for backward compatibility with user-defined
-// chromosomes. In production, consider passing the GA's RNG for full thread safety.
-func (s *TournamentSelector) Select(population []Chromosome) []Chromosome {
+// THREAD SAFETY: Uses the provided rng parameter instead of global math/rand,
+// ensuring safe concurrent execution across multiple GA instances.
+func (s *TournamentSelector) Select(population []Chromosome, rng *rand.Rand) []Chromosome {
 	if len(population) == 0 {
 		return []Chromosome{}
 	}
@@ -390,12 +402,10 @@ func (s *TournamentSelector) Select(population []Chromosome) []Chromosome {
 
 	parents := make([]Chromosome, 2)
 	for i := 0; i < 2; i++ {
-		// Run tournament
-		// Note: This uses math/rand for backward compatibility with user chromosomes
-		// In production, chromosomes should also use the GA's RNG
-		best := population[rand.Intn(len(population))]
+		// Run tournament using provided thread-safe RNG
+		best := population[rng.Intn(len(population))]
 		for j := 1; j < tournamentSize; j++ {
-			competitor := population[rand.Intn(len(population))]
+			competitor := population[rng.Intn(len(population))]
 			if competitor.Fitness() > best.Fitness() {
 				best = competitor
 			}
