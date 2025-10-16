@@ -22,6 +22,10 @@ func (c *MockChromosome) Mutate() {
 	c.fitness += 0.1
 }
 
+func (c *MockChromosome) Clone() Chromosome {
+	return &MockChromosome{fitness: c.fitness}
+}
+
 // NEW TEST: Verify TournamentSelector uses provided RNG
 func TestTournamentSelectorUsesProvidedRNG(t *testing.T) {
 	population := []Chromosome{

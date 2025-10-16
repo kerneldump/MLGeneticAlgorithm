@@ -101,6 +101,13 @@ func (c *TSPChromosome) Mutate() {
 	c.Route[i], c.Route[j] = c.Route[j], c.Route[i]
 }
 
+// Clone creates a deep copy of the chromosome.
+func (c *TSPChromosome) Clone() Chromosome {
+	route := make([]City, len(c.Route))
+	copy(route, c.Route)
+	return &TSPChromosome{Route: route}
+}
+
 func distance(city1, city2 City) float64 {
 	dx := city1.X - city2.X
 	dy := city1.Y - city2.Y

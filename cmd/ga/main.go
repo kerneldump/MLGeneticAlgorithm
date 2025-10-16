@@ -213,3 +213,10 @@ func loadCities(filename string) ([]ga.City, error) {
 
 	return cities, nil
 }
+
+// Clone creates a deep copy of the chromosome.
+func (c *OneMaxChromosome) Clone() ga.Chromosome {
+	genes := make([]bool, len(c.Genes))
+	copy(genes, c.Genes)
+	return &OneMaxChromosome{Genes: genes}
+}

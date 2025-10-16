@@ -36,6 +36,9 @@ type Chromosome interface {
 
 	// Mutate introduces a random change to this chromosome.
 	Mutate()
+
+	// Clone creates a deep copy of this chromosome.
+	Clone() Chromosome
 }
 
 // Selector defines how parent chromosomes are chosen for reproduction.
@@ -335,7 +338,7 @@ func (ga *GA) Run() error {
 				offspring = parents[0].Crossover(parents[1])
 			} else {
 				// If no crossover, clone the first parent
-				offspring = parents[0].Crossover(parents[0])
+				offspring = parents[0].Clone() // ✅ Fixed
 			}
 
 			// Mutation.
