@@ -18,6 +18,7 @@ package ga
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 	"sync"
@@ -272,7 +273,7 @@ func (ga *GA) Run() error {
 		return fmt.Errorf("invalid GA configuration: %w", err)
 	}
 
-	var lastBestFitness float64
+	var lastBestFitness float64 = math.Inf(-1)
 	var generationsWithoutImprovement int
 
 	for i := 0; i < ga.Generations; i++ {
