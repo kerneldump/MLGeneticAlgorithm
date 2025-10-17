@@ -264,7 +264,8 @@ func WithConvergence(generations int, threshold float64) func(*GA) {
 //
 // THREAD SAFETY: Each GA instance has its own RNG and can run concurrently
 // with other GA instances. However, do not call Run() on the same GA instance
-// from multiple goroutines simultaneously.
+// from multiple goroutines simultaneously as this will cause data races on
+// Population and BestChromosome fields.
 func (ga *GA) Run() error {
 	// Validate configuration before running
 	if err := ga.Validate(); err != nil {
