@@ -319,7 +319,7 @@ func (ga *GA) Run() error {
 
 		// Apply elitism if enabled
 		if ga.Elitism {
-			nextGeneration[0] = ga.BestChromosome
+			nextGeneration[0] = ga.Population[0] // Current generation's best
 			nextIndex = 1
 		}
 

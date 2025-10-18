@@ -30,7 +30,7 @@ func (c *TSPChromosome) Fitness() float64 {
 	totalDistance += distance(c.Route[len(c.Route)-1], c.Route[0]) // Return to start
 
 	if totalDistance == 0 {
-		return 0
+		return math.Inf(1) // Perfect route: distance=0 → fitness=+∞
 	}
 	return 1 / totalDistance // We want to minimize distance, so we maximize 1/distance
 }
