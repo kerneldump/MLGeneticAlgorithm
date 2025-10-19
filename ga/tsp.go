@@ -5,11 +5,11 @@ import (
 	"math/rand"
 )
 
-// City represents a city in the TSP problem.
+// City represents a city in the TSP problem with a name and 2D coordinates.
 type City struct {
-	Name string
-	X    float64
-	Y    float64
+	Name string  // Name is the unique identifier for the city
+	X    float64 // X is the horizontal coordinate
+	Y    float64 // Y is the vertical coordinate
 }
 
 // TSPChromosome is a chromosome for the TSP problem.

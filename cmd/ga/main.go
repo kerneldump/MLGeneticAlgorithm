@@ -166,6 +166,10 @@ func runTSP() {
 	fmt.Println("TSP route visualization saved to tsp_route.svg")
 }
 
+// loadCities reads city data from a CSV file and returns a slice of City objects.
+// The CSV must have a header row with columns: name, x, y
+// Each subsequent row represents one city with its name and coordinates.
+// Returns an error if the file cannot be read, has invalid format, or contains invalid data.
 func loadCities(filename string) ([]ga.City, error) {
 	file, err := os.Open(filename)
 	if err != nil {
