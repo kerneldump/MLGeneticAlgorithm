@@ -183,6 +183,17 @@ func loadCities(filename string) ([]ga.City, error) {
 		return nil, fmt.Errorf("CSV file must contain at least a header and one data row")
 	}
 
+	// Validate header
+	expectedHeaders := []string{"name", "x", "y"}
+	if len(records[0]) < 3 {
+		return nil, fmt.Errorf("CSV header must have at least 3 columns, got %d", len(records[0]))
+	}
+	for i, expected := range expectedHeaders {
+		if records[0][i] != expected {
+			return nil, fmt.Errorf("CSV header column %d: expected '%s', got '%s'", i, expected, records[0][i])
+		}
+	}
+
 	cities := make([]ga.City, 0, len(records)-1)
 	for i, record := range records {
 		if i == 0 { // Skip header
