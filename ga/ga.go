@@ -124,6 +124,13 @@ func (ga *GA) Validate() error {
 		return fmt.Errorf("population cannot be nil or empty")
 	}
 
+	// Warn about large populations
+	const maxRecommendedPopulation = 100000
+	if len(ga.Population) > maxRecommendedPopulation {
+		return fmt.Errorf("population size %d exceeds recommended maximum of %d (risk of out-of-memory errors)",
+			len(ga.Population), maxRecommendedPopulation)
+	}
+
 	if ga.Generations < 1 {
 		return fmt.Errorf("generations must be at least 1, got %d", ga.Generations)
 	}
