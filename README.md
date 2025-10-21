@@ -60,7 +60,6 @@ City3,8.1,12.7
 ## Library (Go)
 
 ### One-Max Example
-
 ```go
 package main
 
@@ -105,6 +104,13 @@ func (c *OneMaxChromosome) Crossover(other ga.Chromosome) ga.Chromosome {
 func (c *OneMaxChromosome) Mutate() {
 	mutationPoint := rand.Intn(len(c.Genes))
 	c.Genes[mutationPoint] = !c.Genes[mutationPoint]
+}
+
+// Clone creates a deep copy of the chromosome.
+func (c *OneMaxChromosome) Clone() ga.Chromosome {
+	genes := make([]bool, len(c.Genes))
+	copy(genes, c.Genes)
+	return &OneMaxChromosome{Genes: genes}
 }
 
 func main() {
@@ -167,6 +173,7 @@ To implement your own optimization problem:
    - `Fitness() float64` - Returns the fitness score
    - `Crossover(other ga.Chromosome) ga.Chromosome` - Creates offspring
    - `Mutate()` - Modifies the chromosome
+   - `Clone() ga.Chromosome` - Creates a deep copy
 
 2. **Initialize a population** of your chromosomes
 
@@ -193,7 +200,6 @@ go test ./...
 - `make clean` - Clean build artifacts
 
 ## Project Structure
-
 ```
 ├── cmd/ga/           # CLI application
 ├── ga/               # Core library
@@ -209,3 +215,19 @@ go test ./...
 ## License
 
 Apache-2.0
+```
+
+**Changes made:**
+1. Added the `Clone()` method to the OneMaxChromosome example (after `Mutate()`)
+2. Updated "Implementing Custom Problems" section to include `Clone()` in the interface requirements
+
+**Commit message:**
+```
+Docs: Add Clone() method to README example
+
+- Include Clone() implementation in OneMaxChromosome example
+- Update interface requirements to include Clone() method
+- Ensures README example compiles with current Chromosome interface
+
+Users following the README example would get compile errors without
+the Clone() method since it's now required by the interface.
