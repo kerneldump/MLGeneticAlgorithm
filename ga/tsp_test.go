@@ -3,6 +3,7 @@ package ga
 import (
 	"math"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -81,17 +82,43 @@ func TestTSPCloneIndependence(t *testing.T) {
 		Route: []City{
 			{Name: "A", X: 0, Y: 0},
 			{Name: "B", X: 1, Y: 1},
+			{Name: "C", X: 2, Y: 2},
 		},
 	}
 
 	clone := original.Clone().(*TSPChromosome)
 
-	// Modify clone
-	clone.Route[0].Name = "Modified"
+	// Test 1: Verify routes are independent slices
+	// Modify clone's route by appending
+	clone.Route = append(clone.Route, City{Name: "D", X: 3, Y: 3})
+
+	if len(original.Route) != 3 {
+		t.Errorf("Appending to clone affected original: expected len=3, got len=%d", len(original.Route))
+	}
+
+	// Test 2: Create fresh clone and swap cities
+	clone2 := original.Clone().(*TSPChromosome)
+	clone2.Route[0], clone2.Route[1] = clone2.Route[1], clone2.Route[0]
+
+	if original.Route[0].Name != "A" || original.Route[1].Name != "B" {
+		t.Error("Swapping cities in clone affected original route order")
+	}
+
+	// Test 3: Verify modifying city data in clone doesn't affect original
+	clone3 := original.Clone().(*TSPChromosome)
+
+	// Store original values
+	originalFirstCity := original.Route[0]
+
+	// Modify clone's first city
+	clone3.Route[0] = City{Name: "Modified", X: 999, Y: 999}
 
 	// Verify original unchanged
-	if original.Route[0].Name != "A" {
-		t.Errorf("Clone modification affected original: expected 'A', got '%s'", original.Route[0].Name)
+	if original.Route[0].Name != originalFirstCity.Name ||
+		original.Route[0].X != originalFirstCity.X ||
+		original.Route[0].Y != originalFirstCity.Y {
+		t.Errorf("Modifying clone's city affected original: expected %v, got %v",
+			originalFirstCity, original.Route[0])
 	}
 }
 
@@ -171,4 +198,88 @@ func TestVisualizeTSP(t *testing.T) {
 	// Cleanup
 	_ = os.Remove("test_route.svg")
 	_ = os.Remove("empty_route.svg")
+}
+
+// TestTSPCrossoverEdgeCases tests problematic inputs
+func TestTSPCrossoverEdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		parent1 []City
+		parent2 []City
+	}{
+		{
+			name:    "single city",
+			parent1: []City{{Name: "A", X: 0, Y: 0}},
+			parent2: []City{{Name: "A", X: 0, Y: 0}},
+		},
+		{
+			name:    "two cities",
+			parent1: []City{{Name: "A", X: 0, Y: 0}, {Name: "B", X: 1, Y: 1}},
+			parent2: []City{{Name: "B", X: 1, Y: 1}, {Name: "A", X: 0, Y: 0}},
+		},
+		{
+			name:    "mismatched lengths",
+			parent1: []City{{Name: "A", X: 0, Y: 0}, {Name: "B", X: 1, Y: 1}},
+			parent2: []City{{Name: "A", X: 0, Y: 0}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p1 := &TSPChromosome{Route: tt.parent1}
+			p2 := &TSPChromosome{Route: tt.parent2}
+
+			// Should not panic
+			child := p1.Crossover(p2)
+
+			if child == nil {
+				t.Error("Crossover returned nil")
+			}
+		})
+	}
+}
+
+// TestConcurrentTSPOptimization verifies TSP can run concurrently
+func TestConcurrentTSPOptimization(t *testing.T) {
+	cities := []City{
+		{Name: "A", X: 0, Y: 0},
+		{Name: "B", X: 10, Y: 10},
+		{Name: "C", X: 20, Y: 0},
+		{Name: "D", X: 15, Y: 15},
+	}
+
+	var wg sync.WaitGroup
+	errors := make(chan error, 5)
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(seed int64) {
+			defer wg.Done()
+
+			// Create population
+			population := make([]Chromosome, 20)
+			for j := range population {
+				route := make([]City, len(cities))
+				copy(route, cities)
+				population[j] = &TSPChromosome{Route: route}
+			}
+
+			ga := New(
+				WithPopulation(population),
+				WithGenerations(10),
+				WithRandomSeed(seed),
+			)
+
+			if err := ga.Run(); err != nil {
+				errors <- err
+			}
+		}(int64(i))
+	}
+
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Errorf("Concurrent TSP execution failed: %v", err)
+	}
 }
