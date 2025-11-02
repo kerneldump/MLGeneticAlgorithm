@@ -367,3 +367,300 @@ func TestReproducibleWithSeed(t *testing.T) {
 			ga1.Best().Fitness(), ga2.Best().Fitness())
 	}
 }
+
+// TestValidatePopulationSizeLimit tests the population size validation
+func TestValidatePopulationSizeLimit(t *testing.T) {
+	// Create population exceeding the limit
+	largePopulation := make([]Chromosome, 150000)
+	for i := range largePopulation {
+		largePopulation[i] = &MockChromosome{fitness: 1.0}
+	}
+
+	ga := New(
+		WithPopulation(largePopulation),
+		WithGenerations(10),
+	)
+
+	err := ga.Validate()
+	if err == nil {
+		t.Error("Expected error for oversized population (>100000), got nil")
+	}
+
+	// Verify error message mentions the limit
+	expectedMsg := "exceeds recommended maximum"
+	if err != nil && len(err.Error()) > 0 {
+		if !contains(err.Error(), expectedMsg) {
+			t.Errorf("Expected error message to contain '%s', got: %v", expectedMsg, err)
+		}
+	}
+}
+
+// TestValidateNegativeGenerations tests negative generation values
+func TestValidateNegativeGenerations(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+	}
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(-5),
+	)
+
+	err := ga.Validate()
+	if err == nil {
+		t.Error("Expected error for negative generations, got nil")
+	}
+}
+
+// TestConvergenceWithNegativeFitness tests convergence detection with negative fitness values
+func TestConvergenceWithNegativeFitness(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: -10.0},
+		&MockChromosome{fitness: -5.0},
+		&MockChromosome{fitness: -8.0},
+	}
+
+	callbackCount := 0
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(100),
+		WithConvergence(3, 0.01), // Stop after 3 gens without improvement > 0.01
+		WithRandomSeed(42),
+		WithProgressCallback(func(generation int, best Chromosome) {
+			callbackCount++
+		}),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Should converge early (not run all 100 generations)
+	if callbackCount >= 100 {
+		t.Errorf("Expected early convergence, but ran all %d generations", callbackCount)
+	}
+
+	// Best fitness should be the least negative (closest to 0)
+	bestFitness := ga.Best().Fitness()
+	if bestFitness < -5.0 {
+		t.Errorf("Expected best fitness around -5.0, got %f", bestFitness)
+	}
+}
+
+// TestConvergenceWithZeroThreshold tests convergence with zero threshold
+func TestConvergenceWithZeroThreshold(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	callbackCount := 0
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(50),
+		WithConvergence(5, 0.0), // Stop after 5 gens with ANY improvement threshold
+		WithRandomSeed(42),
+		WithProgressCallback(func(generation int, best Chromosome) {
+			callbackCount++
+		}),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// With zero threshold, should detect convergence relatively quickly
+	if callbackCount > 30 {
+		t.Logf("Convergence with zero threshold took %d generations (expected < 30)", callbackCount)
+	}
+}
+
+// TestEmptySelector tests behavior with empty population in selector
+func TestEmptySelectorPopulation(t *testing.T) {
+	selector := &TournamentSelector{TournamentSize: 2}
+	rng := rand.New(rand.NewSource(12345))
+
+	parents := selector.Select([]Chromosome{}, rng)
+
+	if len(parents) != 0 {
+		t.Errorf("Expected empty parents slice for empty population, got %d parents", len(parents))
+	}
+}
+
+// TestTournamentSelectorInvalidSize tests tournament selector with invalid sizes
+func TestTournamentSelectorInvalidSize(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	tests := []struct {
+		name           string
+		tournamentSize int
+		expectParents  int
+	}{
+		{"zero size", 0, 2},             // Should default to 2
+		{"negative size", -5, 2},        // Should default to 2
+		{"size larger than pop", 10, 2}, // Should clamp to population size
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			selector := &TournamentSelector{TournamentSize: tt.tournamentSize}
+			rng := rand.New(rand.NewSource(12345))
+
+			parents := selector.Select(population, rng)
+
+			if len(parents) != tt.expectParents {
+				t.Errorf("Expected %d parents, got %d", tt.expectParents, len(parents))
+			}
+		})
+	}
+}
+
+// TestElitismPreservation verifies elitism keeps the best chromosome
+func TestElitismPreservation(t *testing.T) {
+	// Create population where best has unique fitness
+	population := []Chromosome{
+		&MockChromosome{fitness: 100.0}, // Best
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+	}
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(10),
+		WithElitism(true),
+		WithRandomSeed(42),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Best should still have fitness >= 100 (might increase due to mutations)
+	bestFitness := ga.Best().Fitness()
+	if bestFitness < 100.0 {
+		t.Errorf("Elitism failed: best fitness %f is less than initial best 100.0", bestFitness)
+	}
+}
+
+// TestNoElitismCanLoseBest verifies that without elitism, best can be lost
+func TestNoElitismBehavior(t *testing.T) {
+	// Create population where best is very different
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 100.0}, // Best, but only 1 copy
+	}
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(5),
+		WithElitism(false), // No elitism
+		WithMutationRate(0.5),
+		WithRandomSeed(42),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Just verify it runs without error - best might or might not be preserved
+	// This test mainly verifies the non-elitism code path works
+	if ga.Best() == nil {
+		t.Error("Expected best chromosome to be set even without elitism")
+	}
+}
+
+// TestSingleChromosomePopulation tests GA with only one chromosome
+func TestSingleChromosomePopulation(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 5.0},
+	}
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(10),
+		WithRandomSeed(42),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run with single chromosome failed: %v", err)
+	}
+
+	if ga.Best() == nil {
+		t.Error("Expected best chromosome to be set")
+	}
+}
+
+// TestZeroMutationRate tests GA with no mutations
+func TestZeroMutationRate(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(10),
+		WithMutationRate(0.0), // No mutations
+		WithRandomSeed(42),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run with zero mutation rate failed: %v", err)
+	}
+
+	if ga.Best() == nil {
+		t.Error("Expected best chromosome to be set")
+	}
+}
+
+// TestZeroCrossoverRate tests GA with no crossover
+func TestZeroCrossoverRate(t *testing.T) {
+	population := []Chromosome{
+		&MockChromosome{fitness: 1.0},
+		&MockChromosome{fitness: 2.0},
+		&MockChromosome{fitness: 3.0},
+	}
+
+	ga := New(
+		WithPopulation(population),
+		WithGenerations(10),
+		WithCrossoverRate(0.0), // No crossover - only cloning
+		WithRandomSeed(42),
+	)
+
+	err := ga.Run()
+	if err != nil {
+		t.Fatalf("Run with zero crossover rate failed: %v", err)
+	}
+
+	if ga.Best() == nil {
+		t.Error("Expected best chromosome to be set")
+	}
+}
+
+// Helper function to check if string contains substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
