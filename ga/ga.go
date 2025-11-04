@@ -21,21 +21,27 @@ import (
 	"math"
 	"math/rand"
 	"sort"
-	"sync"
 	"time"
 )
 
 // Chromosome represents a candidate solution in the genetic algorithm.
 // Implementations must define how to evaluate fitness, combine with other
 // chromosomes (crossover), and introduce random changes (mutation).
+//
+// IMPORTANT: Chromosome implementations must NOT use the global math/rand
+// package for any random operations. The GA framework provides thread-safe
+// random number generation through its internal RNG. If your Chromosome
+// needs randomness, it should be deterministic or accept an RNG parameter.
 type Chromosome interface {
 	// Fitness returns the quality of this solution. Higher values are better.
 	Fitness() float64
 
 	// Crossover combines this chromosome with another to create a new offspring.
+	// This method should be deterministic or use only the chromosome's internal state.
 	Crossover(other Chromosome) Chromosome
 
 	// Mutate introduces a random change to this chromosome.
+	// This method should be deterministic or use only the chromosome's internal state.
 	Mutate()
 
 	// Clone creates a deep copy of this chromosome.
@@ -46,12 +52,12 @@ type Chromosome interface {
 // Different selection strategies (tournament, roulette, rank-based) can be
 // implemented by satisfying this interface.
 //
-// THREAD SAFETY NOTE: The rng parameter must be used for all random operations
+// THREAD SAFETY: The rng parameter MUST be used for all random operations
 // instead of the global math/rand to ensure thread-safe concurrent execution.
 type Selector interface {
 	// Select chooses parent chromosomes from the population for breeding.
 	// The rng parameter provides a thread-safe random number generator that
-	// must be used for all random operations within the selector.
+	// MUST be used for all random operations within the selector.
 	// Returns a slice of selected parents (typically 2).
 	Select(population []Chromosome, rng *rand.Rand) []Chromosome
 }
@@ -67,7 +73,6 @@ type GA struct {
 	BestChromosome         Chromosome
 	progressCallback       func(generation int, best Chromosome)
 	rng                    *rand.Rand
-	mu                     sync.Mutex
 	convergenceGenerations int
 	convergenceThreshold   float64
 }
@@ -203,8 +208,8 @@ func WithElitism(elitism bool) func(*GA) {
 // WithSelector sets a custom selection algorithm.
 // If not specified, tournament selection with size 2 is used by default.
 //
-// IMPORTANT: Custom selectors must use the provided rng parameter for all
-// random operations to ensure thread safety.
+// IMPORTANT: Custom selectors MUST use the provided rng parameter for all
+// random operations to ensure thread safety. Do NOT use global math/rand.
 func WithSelector(selector Selector) func(*GA) {
 	return func(ga *GA) {
 		ga.selector = selector
@@ -271,9 +276,13 @@ func WithConvergence(generations int, threshold float64) func(*GA) {
 //  3. Returns nil on success, or an error if configuration is invalid
 //
 // THREAD SAFETY: Each GA instance has its own RNG and can run concurrently
-// with other GA instances. However, do not call Run() on the same GA instance
-// from multiple goroutines simultaneously as this will cause data races on
-// Population and BestChromosome fields.
+// with other GA instances. However, DO NOT:
+//   - Call Run() on the same GA instance from multiple goroutines simultaneously
+//   - Access Population or BestChromosome fields during Run() from other goroutines
+//   - Use global math/rand in Chromosome or Selector implementations
+//
+// All Chromosome methods (Crossover, Mutate) and Selector methods must be
+// thread-safe and must NOT use global math/rand.
 func (ga *GA) Run() error {
 	// Validate configuration before running
 	if err := ga.Validate(); err != nil {
@@ -331,31 +340,25 @@ func (ga *GA) Run() error {
 		}
 
 		// Fill the rest of the population
+		// NOTE: No mutex needed here because each GA instance has its own RNG.
+		// The ga.rng is not shared across goroutines, making this safe for
+		// concurrent execution of multiple GA instances.
 		for nextIndex < len(ga.Population) {
-			// THREAD SAFETY FIX: Lock for entire selection and reproduction
-			// Pass ga.rng to selector instead of relying on global rand
-			ga.mu.Lock()
-
-			// Select parents using thread-safe RNG
+			// Select parents using the GA's thread-safe RNG
 			parents := ga.selector.Select(ga.Population, ga.rng)
 
 			var offspring Chromosome
-			// Crossover.
-			shouldCrossover := ga.rng.Float64() < ga.CrossoverRate
 
-			if shouldCrossover {
+			// Crossover
+			if ga.rng.Float64() < ga.CrossoverRate {
 				offspring = parents[0].Crossover(parents[1])
 			} else {
 				// If no crossover, clone the first parent
-				offspring = parents[0].Clone() // ✅ Fixed
+				offspring = parents[0].Clone()
 			}
 
-			// Mutation.
-			shouldMutate := ga.rng.Float64() < ga.MutationRate
-
-			ga.mu.Unlock()
-
-			if shouldMutate {
+			// Mutation
+			if ga.rng.Float64() < ga.MutationRate {
 				offspring.Mutate()
 			}
 
